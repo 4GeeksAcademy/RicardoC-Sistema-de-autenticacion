@@ -6,18 +6,32 @@ from flask import Flask, request, jsonify, url_for, send_from_directory
 from flask_migrate import Migrate
 from flask_swagger import swagger
 from api.utils import APIException, generate_sitemap
-from api.models import db
+from api.models import db, User
 from api.routes import api
 from api.admin import setup_admin
 from api.commands import setup_commands
 
+from flask_cors import CORS
+from flask_jwt_extended import create_access_token
+from flask_jwt_extended import JWTManager
+from flask_jwt_extended import get_jwt_identity
+from flask_jwt_extended import jwt_required
+from flask_bcrypt import Bcrypt
+
+
+
+
 # from models import Person
+
 
 ENV = "development" if os.getenv("FLASK_DEBUG") == "1" else "production"
 static_file_dir = os.path.join(os.path.dirname(
     os.path.realpath(__file__)), '../public/')
 app = Flask(__name__)
 app.url_map.strict_slashes = False
+CORS(app)
+jwt = JWTManager(app)           #inicializamos las importaciones necesarias
+bcrypt = Bcrypt(app)
 
 # database condiguration
 db_url = os.getenv("DATABASE_URL")
@@ -67,6 +81,65 @@ def serve_any_other_file(path):
     response.cache_control.max_age = 0  # avoid cache memory
     return response
 
+@app.route('/signup', methods=['POST'])
+def signup():
+
+    body=request.get_json(silent=True)
+    if not body:
+        return jsonify({'msg': 'All fields are required'}), 400
+    if 'email' not in body:
+        return jsonify({'msg':'The email field is required'}), 400
+    if 'password' not in body:
+        return jsonify({'msg':'The password field is required'}), 400
+    
+    user=User.query.filter_by(email=body['email']).first()
+    if user:
+        return jsonify({'msg':'The email is already in use, please choose another one'}), 400
+    
+    encrypted_password=bcrypt.generate_password_hash(body['password']).decode('utf-8')
+                                                                         #convierte la contraseña de byte a string
+    new_user=User(
+        email=body['email'],
+        password=encrypted_password,
+        is_active=True
+    )
+    db.session.add(new_user)
+    db.session.commit()
+    
+    return jsonify({'msg':'Successfully registered user'}), 201
+
+@app.route('/login', methods=['POST'])
+def login():
+
+    body=request.get_json(silent=True)
+
+    if not body:
+        return jsonify({'msg':'All fields are required'})
+    if 'email' not in body:
+        return jsonify({'msg':'The email field is required'}), 400
+    if 'password' not in body:
+        return jsonify({'msg':'The password field is required'}), 400
+    
+    user=User.query.filter_by(email=body['email']).first()
+    if not user:
+        return jsonify({'msg':'Invalid password or email'}), 401
+    
+    db_password=user.password
+    password_is_true=bcrypt.check_password_hash(db_password, body['password']) #se chequea la contraseña de la bd y la que el usuario ingreso
+    if password_is_true is False:  #validacion 
+        return jsonify({'msg':'Invalid password or email'}), 401
+    token=create_access_token(identity=user.email) # creamos el pase(token)
+
+    return jsonify({'msg':'ok',
+                    'jwt_token':token}), 200
+
+@app.route('/private', methods=['GET'])
+@jwt_required() # requerimos el token para entrar a la web
+def private():
+    
+    current_user=get_jwt_identity() #obtemeos el id del token, verifica que el usuario esta registrado y logeado
+
+    return jsonify({'msg':'Ok'}), 200
 
 # this only runs if `$ python src/main.py` is executed
 if __name__ == '__main__':

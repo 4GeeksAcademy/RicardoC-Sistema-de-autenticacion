@@ -46,6 +46,29 @@ const getState = ({ getStore, getActions, setStore }) => {
 
 				//reset the global store
 				setStore({ demo: demo });
+			},
+			private: async () => { //Función que ejecuta el fetch private(Estado global).
+				const token = localStorage.getItem("jwt_token"); //Obtengo el token almacenado en localStorage.
+				if (!token) { //Si no hay token paramos la ejecución.
+					return null
+				}
+				try {
+					const resp = await fetch("https://literate-xylophone-wrvp9jwr9v9p3567v-3001.app.github.dev/private", {
+						headers: {
+							"Content-Type": "application/json",
+							"Authorization": `Bearer ${token}` //Recibimos el token.
+						}
+					});
+					if (!resp.ok) {
+						throw new Error("Application failed!")
+					}
+					const data = await resp.json(); //Esperamos la data.
+					return data //la retornamos por si la queremos usar.
+				} catch (err) {
+					console.log(err);
+					alert("Error http!");
+
+				}
 			}
 		}
 	};
